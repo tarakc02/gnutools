@@ -13,16 +13,46 @@ this basic data analysis starter kit that you can pipe any output through. The
 case study at the end shows how to use these tools to summarize the contents of
 a nested directory structure.
 
+The first example will use this pipe-delimited text file of the iris data:
+
+```bash
+@ butterfly (0): head -4 iris.csv
+
+Sepal.Length|Sepal.Width|Petal.Length|Petal.Width|Species
+5.1|3.5|1.4|0.2|setosa
+4.9|3|1.4|0.2|setosa
+4.7|3.2|1.3|0.2|setosa
+```
+
+To make the examples easier to follow, I'll sometimes pipe results through the
+`column` command in order to better display the tabular structure of the data:
+
+```bash
+@ butterfly (0): head -4 iris.csv | column -s'|' -t
+
+Sepal.Length  Sepal.Width  Petal.Length  Petal.Width  Species
+5.1           3.5          1.4           0.2          setosa
+4.9           3            1.4           0.2          setosa
+4.7           3.2          1.3           0.2          setosa
+
+```
+
+To make it easier, I'll alias that last part:
+
+```bash
+alias prettify="column -s'|' -t"
+```
+
 ## filter rows with `grep`
 
 `grep` is a lot like `dplyr::filter`:
 
 ```bash
-@ butterfly (0): grep 'virginica' iris.csv | head -3
+@ butterfly (0): grep 'virginica' iris.csv | head -3 | prettify
 
-6.3|3.3|6|2.5|virginica
-5.8|2.7|5.1|1.9|virginica
-7.1|3|5.9|2.1|virginica
+6.3  3.3  6    2.5  virginica
+5.8  2.7  5.1  1.9  virginica
+7.1  3    5.9  2.1  virginica
 ```
 
 Note that `grep`, like all of the tools reviewed here, will take either a
@@ -30,18 +60,11 @@ filename (in which case it operates on the contents of the file) or the contents
 of stdin as its input, e.g.:
 
 ```bash
-@ butterfly (0): cat iris.csv | grep 'virginica' | head -3 | column -s'|' -t
+@ butterfly (0): cat iris.csv | grep 'virginica' | head -3 | prettify
 
 6.3  3.3  6    2.5  virginica
 5.8  2.7  5.1  1.9  virginica
 7.1  3    5.9  2.1  virginica
-```
-
-For the purpose of this demonstration, I'll use whitespace to justify the
-output, as above, to make it easier to see the tabular structure of the data.
-
-```bash
-alias prettify="column -s'|' -t"
 ```
 
 # select columns with `cut` + `rev`
