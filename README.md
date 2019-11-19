@@ -1,74 +1,124 @@
-a lot of the programs here operate on stdin, but also have an argument for a filename, so you can specify a filename rather than stdin. the fact that the programs can read input from stdin, and write their output to stdout, makes it easy to chain commands together in pipelines. as a result, some of these commands naturally complement each other, and i'll highlight common pairs as i go.
+# GNU tools for data analysts
 
-# viewing files
+## Introduction
+The idea here is that the basic verbs of SQL/dplyr have analogues among the GNU
+utilities, so we can leverage familiarity with data processing pipelines to
+learn to use them. I'll use a pipe-delimited table to demonstrate. However, we
+won't often need to use these tools with actual tables (I'd rather just read the
+data into R and use `dplyr`). The real benefit is noticing that most
+command-line utilities print lines of text to the screen that look enough like a
+data.frame, so learning these little pipeline tools and tricks amplifies the
+usefuleness of every other tool you learn -- you automatically have access to
+this basic data analysis starter kit that you can pipe any output through. The
+case study at the end shows how to use these tools to summarize the contents of
+a nested directory structure.
 
-## `cat` and `zcat`
+## filter rows with `grep`
 
-prints all lines of a file (or multiple files) to stdout. `zcat` is particularly useful because it can print compressed files. in conjunction with the pipe, that means you can process compressed files without having to separately unzip them:
-
-```bash
-@ butterfly (0): zcat iris.csv.zip | head -3
-
-Sepal.Length|Sepal.Width|Petal.Length|Petal.Width|Species
-5.1|3.5|1.4|0.2|setosa
-4.9|3|1.4|0.2|setosa
-```
-
-## `head` and `tail`
-print the beginning (`head`) or end (`tail`) of input. specify the number of lines using the `-n` option, where *n* is the number of lines.
-
-## pagers: `more`, `less`, etc.
-
-pagers view files a "page" at a time. i use `less`, which allows you to scroll up and down through a file, and search using the `/` command (like in vim). the advantage here is that you don't load an entire file all at once, just the lines that are displayed. this can be useful to preview the contents of a large file, but i also use it in pipelines to preview the output of a command that i'm not sure about. for instance, i recently wanted to look for all R files within my projects directory (see `find` below), but i wanted to make sure i was writing the command correctly before outputting the results to a file, so previewed the command using:
+`grep` is a lot like `dplyr::filter`:
 
 ```bash
-find ~/git -iname '*.R' | less
-```
-
-# filter rows with `grep`
-
-```bash
-@ butterfly (0): grep 'virginica' iris.csv | head -4
+@ butterfly (0): grep 'virginica' iris.csv | head -3
 
 6.3|3.3|6|2.5|virginica
 5.8|2.7|5.1|1.9|virginica
 7.1|3|5.9|2.1|virginica
-6.3|2.9|5.6|1.8|virginica
+```
+
+Note that `grep`, like all of the tools reviewed here, will take either a
+filename (in which case it operates on the contents of the file) or the contents
+of stdin as its input, e.g.:
+
+```bash
+@ butterfly (0): cat iris.csv | grep 'virginica' | head -3 | column -s'|' -t
+
+6.3  3.3  6    2.5  virginica
+5.8  2.7  5.1  1.9  virginica
+7.1  3    5.9  2.1  virginica
+```
+
+For the purpose of this demonstration, I'll use whitespace to justify the
+output, as above, to make it easier to see the tabular structure of the data.
+
+```bash
+alias prettify="column -s'|' -t"
 ```
 
 # select columns with `cut` + `rev`
 
-```bash
-@ butterfly (0): cut iris.csv -d'|' -f2,4-5 | head -4
+`cut` is kind of `dplyr::select` -- it assumes that the text is delimited, and
+takes as arguments the **d**elimiter and **f**ield (column) numbers of the
+fields to select. So to select the second, fourth, and fifth columns, delimiting
+by the pipe (`|`):
 
-Sepal.Width|Petal.Width|Species
-3.5|0.2|setosa
-3|0.2|setosa
-3.2|0.2|setosa
+```bash
+@ butterfly (0): cut iris.csv -d'|' -f2,4-5 | prettify | head -4
+
+Sepal.Width  Petal.Width  Species
+3.5          0.2          setosa
+3            0.2          setosa
+3.2          0.2          setosa
 ```
 
-In order to select rows not based on counting from the left, but from the right (e.g. last column, second-to-last, etc) use `rev` to reverse the input, making the last column into the first:
+As we will see in the case study at the end, we don't always know how many
+fields there will be in the input data. That's not a problem if we want to
+select from the left of the table, but what if we want something like "the
+second-to-last and last columns?" We can use the `cut | rev | cut` trick: `rev`
+**rev**erses the input, for instance:
 
 ```bash
-@ butterfly (0): rev iris.csv | cut -d'|' -f1-2 | rev | head -4
+@ butterfly (0): echo 'hello world' | rev
 
-Petal.Width|Species
-0.2|setosa
-0.2|setosa
-0.2|setosa
+dlrow olleh
+```
+
+So to select the last- and second-to-last columns, I can reverse the input,
+select the first and second columns, and then reverse again so that everything
+is right-side-forward:
+
+```bash
+@ butterfly (0): rev iris.csv | cut -d'|' -f1-2 | rev | prettify | head -4
+
+Petal.Width  Species
+0.2          setosa
+0.2          setosa
+0.2          setosa
 ```
 
 # summarizing with `wc`
 
+`wc` does some of what `dplyr::summarize` or `base::nrow` will do. `wc -l`
+counts the number of **l**ines in the input, so to see the total number of rows:
+
 ```bash
 @ butterfly (0): wc -l iris.csv # note: includes header
 151 iris.csv
+```
 
+Or just the number of rows with species `versicolor`:
+
+```bash
 @ butterfly (0): grep 'versicolor' iris.csv | wc -l
 50
 ```
 
 # sorting and grouped summaries with `sort` + `uniq`
+
+`sort` sorts its input, while `uniq` takes input that includes repeated lines,
+and removes the repeats. By using them together, you de-duplicate the entire
+input to see a distinct list:
+
+```bash
+@ butterfly (0): cut -d'|' -f5 iris.csv | sort | uniq
+
+Species
+setosa
+versicolor
+virginica
+```
+
+Use the `-c` switch to add a **c**ount of times that each unique value occurred, as
+in `dplyr::group_by` + `dplyr::summarize`:
 
 ```bash
 @ butterfly (0): cut -d'|' -f5 iris.csv | sort | uniq -c
@@ -81,6 +131,10 @@ Petal.Width|Species
 
 # mutating with `tr`/`awk`/`sed`/etc.
 
+There are a number of tools that take lines of input and transform them in some
+way, such as replacing patterns. These are sort of like `dplyr::mutate`. Here we
+take the previous summary and convert everything to upper-case:
+
 ```bash
 @ butterfly (0): cut -d'|' -f5 iris.csv \
     | sort | uniq -c \
@@ -90,38 +144,33 @@ Petal.Width|Species
      50 SETOSA
      50 VERSICOLOR
      50 VIRGINICA
-
 ```
 
-# finding/searching
+# It's all delimited lines of text
 
-## `grep`
-
-`grep` is a useful tool for searching through the contents of files. for instance:
+As mentioned above, I don't actually use these command-line tools to work with
+tables like this. But most command-line tools print out lines of text, often
+with some kind of structure using a consistent delimiter, to stdout. So we
+can pipe outputs of all sorts of tools through these utilities. For instance, if
+my browser is hanging and I want to find its process id in order to kill it:
 
 ```bash
-@ butterfly (0): grep 'virginica' iris.csv | head -4
+@ butterfly (0): ps -A | grep firefox
 
-6.3|3.3|6|2.5|virginica
-5.8|2.7|5.1|1.9|virginica
-7.1|3|5.9|2.1|virginica
-6.3|2.9|5.6|1.8|virginica
+  655 ??        86:18.88 /Applications/Firefox.app/Contents/MacOS/firefox
+77413 ttys011    0:00.00 grep firefox
 ```
 
-but it's helpful to think of `grep` not as something that only searches through files, but rather as something that searches through whatever you feed into stdin. for instance, to view a list of all dotfiles in my home directory, i can do:
+# Case study: nested directory structure
+
+We sometimes receive entire directories of data from partners, where the data
+files are nested within varying levels of the structure. Sometimes, the nested
+directory structure itself encodes some useful bit of metadata. `proj`, for
+instance, has a bunch of data files (stored as *.txt files) within a nested
+directory structure that sort of encodes the date:
 
 ```bash
-ls -a ~ | grep '^\.'
-```
-
-`ls -a ~` lists all files (including those that begin with a dot, since i used the `-a` switch) in my home directory, and then `grep '^\.'` searches for lines with a dot at the beginning of the line.
-
-### `grep` example: visualizing project structure
-
-We sometimes receive entire directories of data from clients, where the data files are nested within varying levels of the structure. i often use `tree` to visualize a project's contents:
-
-```
-@ butterfly (0): tree proj | head -25
+@ butterfly (0): tree proj | head -15
 
 proj
 ├── 2018
@@ -138,62 +187,15 @@ proj
 │   │   └── 09.txt
 │   ├── Q2
 │   │   ├── 01.txt
-│   │   ├── 02.txt
-│   │   ├── 03.txt
-│   │   ├── 04.txt
-│   │   ├── 05.txt
-│   │   ├── 06.txt
-│   │   └── 07.txt
-│   ├── Q3
-│   │   ├── 01.txt
-│   │   ├── 02.txt
-│   │   ├── 03.txt
-```
-
-In some cases, including this one, the directory structure itself encodes some meaningful bit of metadata. `tree` has the `-L` option to limit the number of levels down a tree you want to print, so if I wanted to see all the full date range for the data we received, I might start by trying:
 
 ```
-@ butterfly (0): tree proj -L 2
 
-proj
-├── 2018
-│   ├── Q1
-│   ├── Q2
-│   ├── Q3
-│   └── Q4
-├── 2019
-│   ├── Q1
-│   ├── Q2
-│   ├── Q3
-│   └── Q4
-└── new-batch
-    └── files-from-xxx
+I say "sort of" because the files are stored in various ad-hoc sub-directories,
+so that all of the files are not found at the same level down the hierarchy. By
+filtering out the ".txt" lines from tree, I can see the full directory
+structure:
 
-12 directories, 0 files
-```
-But in this case the project has different levels of meaningful hieararchy in different places:
-
-```
-@ butterfly (0): tree -L 2 proj/new-batch/files-from-xxx/
-
-proj/new-batch/files-from-xxx/
-├── 2016
-│   ├── Q1
-│   ├── Q2
-│   ├── Q3
-│   └── Q4
-└── 2017
-    ├── Q1
-    ├── Q2
-    ├── Q3
-    └── Q4
-
-10 directories, 0 files
-```
-
-I can pipe the output from `tree` through `grep` to weed out the individaul $.txt$ files, and just look at the directory structure. the `-v` option makes `grep` work in opposite, it only returns the lines that *do not* match the search pattern:
-
-```
+```bash
 @ butterfly (0): tree proj | grep -v '\.txt'
 
 proj
@@ -223,39 +225,107 @@ proj
 22 directories, 147 files
 ```
 
-## `grep -r`
+## `find`
 
-A common need is to find some bit of text within all files in a project. For instance, you want to find every time you used a particular function within 
+The `find` tool looks recursively through directories for files or directories
+matching some pattern(s). It's really powerful, `man find` will come in handy.
+For now, the most useful options are:
 
-```
-@ butterfly (0): find . -iname '*.txt' | rev | cut -d'/' -f2-3 | rev | sort | uniq -c
-      1 2016/Q1
-     17 2016/Q2
-      9 2016/Q3
-      5 2016/Q4
-     10 2017/Q1
-      4 2017/Q2
-     11 2017/Q3
-     31 2017/Q4
-     10 2018/Q1
-      7 2018/Q2
-      7 2018/Q3
-      1 2018/Q4
-      3 2019/Q1
-      6 2019/Q2
-      5 2019/Q3
-     20 2019/Q4
-```
+- `name`, `iname`: search for *filenames* matching a given pattern. `iname`
+  means the search will be case-insensitive, which is what I usually want
+- `path`, `ipath`: search for *paths* matching a given pattern.
+- `type`: whether you want to look for regular files, directories, symlinks,
+  etc.
+
+So, for instance I can view the full path of every data file (I'm using `shuf`
+here to **shuf**fle the input, so that we can see a random selection of results,
+rather than just the first few in order):
 
 ```bash
-# 1. list full paths of .txt files
-# 2. take the parent + grandparent dir names
-# 3. count how many files in each
+@ butterfly (0): find proj -iname '*.txt' | shuf | head -7
 
-find . -iname '*.txt' \
-    | rev | cut -d'/' -f2-3 | rev \
-    | sort | uniq -c
+proj/new-batch/files-from-xxx/2017/Q2/file.txt
+proj/2019/Q3/04.txt
+proj/new-batch/files-from-xxx/2017/Q4/16.txt
+proj/2019/Q2/02.txt
+proj/new-batch/files-from-xxx/2017/Q4/18.txt
+proj/new-batch/files-from-xxx/2016/Q3/04.txt
+proj/new-batch/files-from-xxx/2017/Q4/13.txt
 ```
+
+*Note: we often have some processing code that we want to run on every input data
+file. It is much easier to use `find`, as above, to generate the list of
+filenames for the processing code to run on, rather than writing some custom
+recursive code in R or Python to walk the directory structure.*
+
+## A ragged array
+
+Notice that we can treat the path-delimiter `/` as a field delimiter, and by
+doing so see that `find` is returning something resembling the tables we were
+working with earlier:
+
+```bash
+@ butterfly (0): find proj -iname '*.txt' | shuf | head -7 | column -s'/' -t
+
+proj  2019       Q3              05.txt
+proj  new-batch  files-from-xxx  2017    Q1  10.txt
+proj  2018       Q1              05.txt
+proj  new-batch  files-from-xxx  2016    Q4  01.txt
+proj  new-batch  files-from-xxx  2016    Q2  00.txt
+proj  new-batch  files-from-xxx  2017    Q4  11.txt
+proj  new-batch  files-from-xxx  2017    Q4  12.txt
+```
+
+It's not quite a table, since different rows can have different numbers of
+fields. But notice also that the date metadata is encoded in the second- and
+third-to-last columns of each row:
+
+```bash
+@ butterfly (0): find proj -iname '*.txt' \
+    | shuf \
+    | rev | cut -d'/' -f2-3 | rev \
+    | head -7
+
+2017/Q1
+2016/Q2
+2016/Q4
+2019/Q3
+2018/Q3
+2018/Q1
+2016/Q4
+```
+
+So, we have a way of reporting the distribution of data by date:
+
+```bash
+@ butterfly (0): find proj -iname '*.txt' \
+    | rev | cut -d'/' -f2-3 | rev \
+    | sort | uniq -c \
+    | tr '/' '-' \
+    | sort -r
+
+     31 2017-Q4
+     20 2019-Q4
+     17 2016-Q2
+     11 2017-Q3
+     10 2018-Q1
+     10 2017-Q1
+      9 2016-Q3
+      7 2018-Q3
+      7 2018-Q2
+      6 2019-Q2
+      5 2019-Q3
+      5 2016-Q4
+      4 2017-Q2
+      3 2019-Q1
+      1 2018-Q4
+      1 2016-Q1
+```
+
+Since our projects always keep source code in a directory named "src," I can use
+the same trick to find out what the most common programming languages are based
+on number of scripts. Note here I use the dot as the field delimiter, because I
+want to isolate the file extensions:
 
 ```
 @ butterfly (0): find ~/git -ipath '*/src/*.*' \
@@ -264,9 +334,9 @@ find . -iname '*.txt' \
     | sort | uniq -c \
     | sort -r
 
-    950 py
+    952 py
     478 pyc
-    454 r
+    459 r
     142 xml
     102 pdf
      73 json
@@ -276,10 +346,10 @@ find . -iname '*.txt' \
      18 tex
      14 csv
      11 md
-      7 rmd
+      9 rmd
       6 jl
+      5 ipynb
       4 sh
-      4 ipynb
       2 sty
       2 rdata
       2 html
@@ -296,8 +366,4 @@ find . -iname '*.txt' \
       1 history
       1 depricated
       1 bib
-```
-
-```bash
-zcat iris.csv.zip | cut -d'|' -f5 | sort | uniq -c
 ```
